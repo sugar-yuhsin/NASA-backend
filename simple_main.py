@@ -148,18 +148,31 @@ async def query_ocean_data_by_date(target_date: str):
             except:
                 return None
         
+        # 添加 safe_float 函數（如果還沒有定義）
+        def safe_float(value):
+            try:
+                return float(value) if value else None
+            except:
+                return None
+        
         sst_values = [safe_float(record['SST_Value']) for record in matching_records]
         chl_values = [safe_float(record['CHL_Value']) for record in matching_records]
         ssha_values = [safe_float(record['SSHA_Value']) for record in matching_records]
+        longitude_values = [safe_float(record['Longitude']) for record in matching_records]
+        latitude_values = [safe_float(record['Latitude']) for record in matching_records]
         
         # 過濾 None 值
         sst_values = [v for v in sst_values if v is not None]
         chl_values = [v for v in chl_values if v is not None]
         ssha_values = [v for v in ssha_values if v is not None]
+        longitude_values = [v for v in longitude_values if v is not None]
+        latitude_values = [v for v in latitude_values if v is not None]
         
         avg_sst = sum(sst_values) / len(sst_values) if sst_values else None
         avg_chl = sum(chl_values) / len(chl_values) if chl_values else None
         avg_ssha = sum(ssha_values) / len(ssha_values) if ssha_values else None
+        avg_longitude = sum(longitude_values) / len(longitude_values) if longitude_values else None
+        avg_latitude = sum(latitude_values) / len(latitude_values) if latitude_values else None
         
         return {
             "status": "success",
@@ -167,6 +180,8 @@ async def query_ocean_data_by_date(target_date: str):
             "sst_value": round(avg_sst, 6) if avg_sst is not None else None,
             "chl_value": round(avg_chl, 6) if avg_chl is not None else None,
             "ssha_value": round(avg_ssha, 6) if avg_ssha is not None else None,
+            "longitude": round(avg_longitude, 6) if avg_longitude is not None else None,
+            "latitude": round(avg_latitude, 6) if avg_latitude is not None else None,
             "data_count": len(matching_records),
             "message": "查詢成功"
         }

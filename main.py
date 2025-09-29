@@ -101,39 +101,214 @@ async def health_check():
         "router_loaded": router_loaded
     }
 
-# 如果路由載入失敗，提供簡單的海洋數據查詢端點
+# 全域變數和函數
+OCEAN_DATA_PATH = "comprehensive_shark_ocean_features - comprehensive_shark_ocean_features.csv"
+
+def safe_float(value):
+    """安全轉換為浮點數"""
+    try:
+        return float(value) if value else None
+    except:
+        return None
+
+# 如果路由載入失敗，提供完整的海洋數據和ML預測端點
 if not router_loaded:
-    print("📋 正在載入簡單的海洋數據端點...")
+    print("📋 正在載入完整的海洋數據和ML預測端點...")
     
+    # ============================
+    # 海洋數據 API
+    # ============================
+    
+    @app.get("/api/v1/ocean-data/query/{target_date}")
+    async def query_ocean_data_by_date(target_date: str):
+        """根據日期查詢海洋數據（包含經度和緯度）"""
+        try:
+            # 解析日期
+            query_date = datetime.strptime(target_date, '%Y-%m-%d').date()
+            
+            # 查詢 CSV 數據
+            matching_records = []
+            
+            with open(OCEAN_DATA_PATH, 'r', encoding='utf-8') as file:
+                reader = csv.DictReader(file)
+                
+                for row in reader:
+                    row_date = datetime.strptime(row['Date'], '%Y-%m-%d').date()
+                    if row_date == query_date:
+                        matching_records.append(row)
+            
+            if not matching_records:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"找不到日期 {target_date} 的海洋數據"
+                )
+            
+            # 計算平均值
+            sst_values = [safe_float(record['SST_Value']) for record in matching_records]
+            chl_values = [safe_float(record['CHL_Value']) for record in matching_records]
+            ssha_values = [safe_float(record['SSHA_Value']) for record in matching_records]
+            longitude_values = [safe_float(record['Longitude']) for record in matching_records]
+            latitude_values = [safe_float(record['Latitude']) for record in matching_records]
+            
+            # 過濾 None 值
+            sst_values = [v for v in sst_values if v is not None]
+            chl_values = [v for v in chl_values if v is not None]
+            ssha_values = [v for v in ssha_values if v is not None]
+            longitude_values = [v for v in longitude_values if v is not None]
+            latitude_values = [v for v in latitude_values if v is not None]
+            
+            avg_sst = sum(sst_values) / len(sst_values) if sst_values else None
+            avg_chl = sum(chl_values) / len(chl_values) if chl_values else None
+            avg_ssha = sum(ssha_values) / len(ssha_values) if ssha_values else None
+            avg_longitude = sum(longitude_values) / len(longitude_values) if longitude_values else None
+            avg_latitude = sum(latitude_values) / len(latitude_values) if latitude_values else None
+            
+            return {
+                "status": "success",
+                "date": target_date,
+                "sst_value": round(avg_sst, 6) if avg_sst is not None else None,
+                "chl_value": round(avg_chl, 6) if avg_chl is not None else None,
+                "ssha_value": round(avg_ssha, 6) if avg_ssha is not None else None,
+                "longitude": round(avg_longitude, 6) if avg_longitude is not None else None,
+                "latitude": round(avg_latitude, 6) if avg_latitude is not None else None,
+                "data_count": len(matching_records),
+                "message": "查詢成功"
+            }
+            
+        except ValueError:
+            raise HTTPException(
+                status_code=400, 
+                detail="日期格式錯誤，請使用 YYYY-MM-DD 格式"
+            )
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=500, 
+                detail="海洋數據檔案不存在"
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, 
+                detail=f"查詢失敗: {str(e)}"
+            )
+    
+    @app.get("/api/v1/ocean-data/available-dates")
+    async def get_available_dates():
+        """獲取可用的日期列表"""
+        try:
+            dates = set()
+            
+            with open(OCEAN_DATA_PATH, 'r', encoding='utf-8') as file:
+                reader = csv.DictReader(file)
+                
+                for row in reader:
+                    if len(dates) >= 20:  # 限制返回數量
+                        break
+                    dates.add(row['Date'])
+            
+            return {
+                "status": "success",
+                "available_dates": sorted(list(dates)),
+                "total_count": len(dates),
+                "message": "可用日期列表 (前20個)"
+            }
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, 
+                detail=f"讀取可用日期失敗: {str(e)}"
+            )
+    
+    # 保留舊的簡單端點以保持向後兼容
     @app.get("/simple-ocean-data/{date}")
     async def get_simple_ocean_data(date: str):
-        """簡單的海洋數據查詢端點（回退版本）"""
+        """簡單的海洋數據查詢端點（向後兼容）"""
         try:
-            # 讀取 CSV 檔案
-            csv_filename = "comprehensive_shark_ocean_features - comprehensive_shark_ocean_features.csv"
+            # 重新導向到新的 API
+            result = await query_ocean_data_by_date(date)
             
-            with open(csv_filename, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    if row['Date'] == date:
-                        return {
-                            "status": "success",
-                            "date": date,
-                            "data": {
-                                "sst_value": float(row.get('SST_Value', 0)),
-                                "chl_value": float(row.get('CHL_Value', 0)),
-                                "ssha_value": float(row.get('SSHA_Value', 0)),
-                                "longitude": float(row.get('Longitude', 0)),
-                                "latitude": float(row.get('Latitude', 0))
-                            }
-                        }
+            # 轉換格式以保持兼容性
+            return {
+                "status": "success",
+                "date": date,
+                "data": {
+                    "sst_value": result.get("sst_value"),
+                    "chl_value": result.get("chl_value"), 
+                    "ssha_value": result.get("ssha_value"),
+                    "longitude": result.get("longitude"),
+                    "latitude": result.get("latitude")
+                }
+            }
             
-            raise HTTPException(status_code=404, detail=f"找不到日期 {date} 的數據")
-            
-        except FileNotFoundError:
-            raise HTTPException(status_code=500, detail="海洋數據檔案不存在")
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"讀取數據失敗: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"查詢失敗: {str(e)}")
+    
+    # ============================
+    # 機器學習預測 API
+    # ============================
+    
+    # ML 相關全域變數
+    MODEL_PATH = "shark_rf_model_round_18.joblib"
+    _model = None
+    
+    def load_ml_model():
+        """載入機器學習模型"""
+        global _model
+        
+        if _model is None:
+            try:
+                import joblib
+                import os
+                
+                if not os.path.exists(MODEL_PATH):
+                    return None, f"模型檔案不存在: {MODEL_PATH}"
+                
+                _model = joblib.load(MODEL_PATH)
+                return _model, "模型載入成功"
+                
+            except ImportError:
+                return None, "請安裝 joblib: pip install joblib"
+            except Exception as e:
+                return None, f"載入模型失敗: {e}"
+        
+        return _model, "模型已載入"
+    
+    @app.get("/api/v1/ml/model-info")
+    async def get_model_info():
+        """獲取模型信息"""
+        try:
+            import os
+            model, message = load_ml_model()
+            
+            info = {
+                "model_path": MODEL_PATH,
+                "file_exists": os.path.exists(MODEL_PATH),
+                "status": "loaded" if model else "not_loaded",
+                "message": message
+            }
+            
+            if os.path.exists(MODEL_PATH):
+                info["file_size_mb"] = round(os.path.getsize(MODEL_PATH) / (1024 * 1024), 2)
+            
+            if model:
+                info["model_type"] = str(type(model).__name__)
+                
+                # 嘗試獲取額外信息
+                try:
+                    if hasattr(model, 'n_features_in_'):
+                        info['n_features'] = model.n_features_in_
+                    if hasattr(model, 'feature_names_in_'):
+                        info['feature_names'] = model.feature_names_in_.tolist()
+                    if hasattr(model, 'classes_'):
+                        info['classes'] = model.classes_.tolist()
+                    if hasattr(model, 'n_estimators'):
+                        info['n_estimators'] = model.n_estimators
+                except:
+                    pass
+            
+            return info
+            
+        except Exception as e:
+            return {"error": f"獲取模型信息失敗: {str(e)}"}
 
 if __name__ == "__main__":
     import uvicorn

@@ -47,6 +47,8 @@ def get_ocean_data_by_date(target_date: date) -> Dict:
                 "sst_value": None,
                 "chl_value": None,
                 "ssha_value": None,
+                "longitude": None,
+                "latitude": None,
                 "data_count": 0,
                 "message": "該日期無數據"
             }
@@ -55,21 +57,29 @@ def get_ocean_data_by_date(target_date: date) -> Dict:
         sst_values = [safe_float(record['SST_Value']) for record in matching_records]
         chl_values = [safe_float(record['CHL_Value']) for record in matching_records]
         ssha_values = [safe_float(record['SSHA_Value']) for record in matching_records]
+        longitude_values = [safe_float(record['Longitude']) for record in matching_records]
+        latitude_values = [safe_float(record['Latitude']) for record in matching_records]
         
         # 過濾 None 值
         sst_values = [v for v in sst_values if v is not None]
         chl_values = [v for v in chl_values if v is not None]
         ssha_values = [v for v in ssha_values if v is not None]
+        longitude_values = [v for v in longitude_values if v is not None]
+        latitude_values = [v for v in latitude_values if v is not None]
         
         avg_sst = sum(sst_values) / len(sst_values) if sst_values else None
         avg_chl = sum(chl_values) / len(chl_values) if chl_values else None
         avg_ssha = sum(ssha_values) / len(ssha_values) if ssha_values else None
+        avg_longitude = sum(longitude_values) / len(longitude_values) if longitude_values else None
+        avg_latitude = sum(latitude_values) / len(latitude_values) if latitude_values else None
         
         return {
             "date": str(target_date),
             "sst_value": round(avg_sst, 6) if avg_sst is not None else None,
             "chl_value": round(avg_chl, 6) if avg_chl is not None else None,
             "ssha_value": round(avg_ssha, 6) if avg_ssha is not None else None,
+            "longitude": round(avg_longitude, 6) if avg_longitude is not None else None,
+            "latitude": round(avg_latitude, 6) if avg_latitude is not None else None,
             "data_count": len(matching_records),
             "message": "查詢成功"
         }
@@ -80,6 +90,8 @@ def get_ocean_data_by_date(target_date: date) -> Dict:
             "sst_value": None,
             "chl_value": None,
             "ssha_value": None,
+            "longitude": None,
+            "latitude": None,
             "data_count": 0,
             "error": "CSV 檔案不存在"
         }
@@ -89,6 +101,8 @@ def get_ocean_data_by_date(target_date: date) -> Dict:
             "sst_value": None,
             "chl_value": None,
             "ssha_value": None,
+            "longitude": None,
+            "latitude": None,
             "data_count": 0,
             "error": f"讀取數據失敗: {str(e)}"
         }
@@ -104,6 +118,8 @@ async def get_ocean_data_by_date_simple(target_date: str):
     - sst_value: 海表溫度值
     - chl_value: 葉綠素值  
     - ssha_value: 海面高度異常值
+    - longitude: 經度
+    - latitude: 緯度
     """
     try:
         # 解析日期
