@@ -102,7 +102,7 @@ async def health_check():
     }
 
 # 全域變數和函數
-OCEAN_DATA_PATH = "comprehensive_shark_ocean_features - comprehensive_shark_ocean_features.csv"
+OCEAN_DATA_PATH = "merged_shark_ocean_data.csv"
 
 def safe_float(value):
     """安全轉換為浮點數"""
@@ -145,10 +145,11 @@ if not router_loaded:
             
             # 計算平均值
             sst_values = [safe_float(record['SST_Value']) for record in matching_records]
-            chl_values = [safe_float(record['CHL_Value']) for record in matching_records]
+            chl_values = [safe_float(record['CHL_Concentration']) for record in matching_records]  # 注意：新檔案用 CHL_Concentration
             ssha_values = [safe_float(record['SSHA_Value']) for record in matching_records]
             longitude_values = [safe_float(record['Longitude']) for record in matching_records]
             latitude_values = [safe_float(record['Latitude']) for record in matching_records]
+            has_shark_values = [int(record['has_shark']) for record in matching_records]  # 新增：鯊魚標籤
             
             # 過濾 None 值
             sst_values = [v for v in sst_values if v is not None]
@@ -163,6 +164,10 @@ if not router_loaded:
             avg_longitude = sum(longitude_values) / len(longitude_values) if longitude_values else None
             avg_latitude = sum(latitude_values) / len(latitude_values) if latitude_values else None
             
+            # 計算鯊魚出現率 (當天有多少比例的記錄有鯊魚)
+            shark_presence_rate = sum(has_shark_values) / len(has_shark_values) if has_shark_values else 0
+            has_shark = shark_presence_rate > 0  # 如果當天有任何記錄顯示有鯊魚，就標記為有鯊魚
+            
             return {
                 "status": "success",
                 "date": target_date,
@@ -171,6 +176,8 @@ if not router_loaded:
                 "ssha_value": round(avg_ssha, 6) if avg_ssha is not None else None,
                 "longitude": round(avg_longitude, 6) if avg_longitude is not None else None,
                 "latitude": round(avg_latitude, 6) if avg_latitude is not None else None,
+                "has_shark": has_shark,
+                "shark_presence_rate": round(shark_presence_rate, 3),
                 "data_count": len(matching_records),
                 "message": "查詢成功"
             }

@@ -28,7 +28,7 @@ def safe_float(value: str) -> Optional[float]:
 
 def get_ocean_data_by_date(target_date: date) -> Dict:
     """根據日期獲取海洋數據"""
-    csv_file = "comprehensive_shark_ocean_features - comprehensive_shark_ocean_features.csv"
+    csv_file = "merged_shark_ocean_data.csv"
     
     matching_records = []
     
@@ -49,16 +49,19 @@ def get_ocean_data_by_date(target_date: date) -> Dict:
                 "ssha_value": None,
                 "longitude": None,
                 "latitude": None,
+                "has_shark": False,
+                "shark_presence_rate": 0.0,
                 "data_count": 0,
                 "message": "該日期無數據"
             }
         
         # 計算平均值
         sst_values = [safe_float(record['SST_Value']) for record in matching_records]
-        chl_values = [safe_float(record['CHL_Value']) for record in matching_records]
+        chl_values = [safe_float(record['CHL_Concentration']) for record in matching_records]  # 新檔案用 CHL_Concentration
         ssha_values = [safe_float(record['SSHA_Value']) for record in matching_records]
         longitude_values = [safe_float(record['Longitude']) for record in matching_records]
         latitude_values = [safe_float(record['Latitude']) for record in matching_records]
+        has_shark_values = [int(record['has_shark']) for record in matching_records]  # 新增：鯊魚標籤
         
         # 過濾 None 值
         sst_values = [v for v in sst_values if v is not None]
@@ -73,6 +76,10 @@ def get_ocean_data_by_date(target_date: date) -> Dict:
         avg_longitude = sum(longitude_values) / len(longitude_values) if longitude_values else None
         avg_latitude = sum(latitude_values) / len(latitude_values) if latitude_values else None
         
+        # 計算鯊魚出現率
+        shark_presence_rate = sum(has_shark_values) / len(has_shark_values) if has_shark_values else 0
+        has_shark = shark_presence_rate > 0
+        
         return {
             "date": str(target_date),
             "sst_value": round(avg_sst, 6) if avg_sst is not None else None,
@@ -80,6 +87,8 @@ def get_ocean_data_by_date(target_date: date) -> Dict:
             "ssha_value": round(avg_ssha, 6) if avg_ssha is not None else None,
             "longitude": round(avg_longitude, 6) if avg_longitude is not None else None,
             "latitude": round(avg_latitude, 6) if avg_latitude is not None else None,
+            "has_shark": has_shark,
+            "shark_presence_rate": round(shark_presence_rate, 3),
             "data_count": len(matching_records),
             "message": "查詢成功"
         }
@@ -92,6 +101,8 @@ def get_ocean_data_by_date(target_date: date) -> Dict:
             "ssha_value": None,
             "longitude": None,
             "latitude": None,
+            "has_shark": False,
+            "shark_presence_rate": 0.0,
             "data_count": 0,
             "error": "CSV 檔案不存在"
         }
@@ -103,6 +114,8 @@ def get_ocean_data_by_date(target_date: date) -> Dict:
             "ssha_value": None,
             "longitude": None,
             "latitude": None,
+            "has_shark": False,
+            "shark_presence_rate": 0.0,
             "data_count": 0,
             "error": f"讀取數據失敗: {str(e)}"
         }
@@ -120,6 +133,8 @@ async def get_ocean_data_by_date_simple(target_date: str):
     - ssha_value: 海面高度異常值
     - longitude: 經度
     - latitude: 緯度
+    - has_shark: 是否有鯊魚 (True/False)
+    - shark_presence_rate: 鯊魚出現率 (0.0-1.0)
     """
     try:
         # 解析日期
