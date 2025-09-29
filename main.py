@@ -1,26 +1,36 @@
 """
-NASA Hackathon FastAPI Application
-主應用程式進入點
+簡化的 NASA 海洋數據與ML預測 FastAPI 應用程式
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from contextlib import asynccontextmanager
+import csv
+from datetime import datetime, date
+from typing import Dict, Optional
+import uvicorn
 
-from app.core.config import settings
-from app.routers import api_router
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """應用程式生命週期管理"""
-    # 啟動時執行
-    print("🚀 NASA Hackathon API 正在啟動...")
-    yield
-    # 關閉時執行
-    print("👋 NASA Hackathon API 正在關閉...")
-
+# 嘗試載入配置（如果可用）
+try:
+    from app.core.config import settings, get_cors_origins
+    config_available = True
+except ImportError:
+    print("⚠️ 配置模組載入失敗，使用預設設定")
+    config_available = False
+    
+    # 簡單的設定類
+    class SimpleSettings:
+        PROJECT_NAME = "NASA 海洋數據與ML預測 API"
+        PROJECT_DESCRIPTION = "海洋數據查詢和機器學習預測 API"
+        VERSION = "1.0.0"
+        HOST = "0.0.0.0"
+        PORT = 8000
+        API_V1_STR = "/api/v1"
+        ALLOWED_HOSTS = ["*"]
+        
+    settings = SimpleSettings()
+    
+    def get_cors_origins():
+        return ["*"]
 
 def create_application() -> FastAPI:
     """創建 FastAPI 應用程式實例"""
@@ -29,127 +39,100 @@ def create_application() -> FastAPI:
         title=settings.PROJECT_NAME,
         description=settings.PROJECT_DESCRIPTION,
         version=settings.VERSION,
-        openapi_url=f"{settings.API_V1_STR}/openapi.json",
-        lifespan=lifespan,
-        docs_url="/docs",
-        redoc_url="/redoc",
+        openapi_url=f"{settings.API_V1_STR}/openapi.json" if hasattr(settings, 'API_V1_STR') else "/openapi.json"
     )
 
     # 設定 CORS 中間件
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.ALLOWED_HOSTS,
+        allow_origins=get_cors_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    # 設定信任主機中間件
-    app.add_middleware(
-        TrustedHostMiddleware, 
-        allowed_hosts=settings.ALLOWED_HOSTS
-    )
+    # 嘗試載入路由
+    try:
+        from app.routers import api_router
+        
+        # 註冊 API 路由
+        app.include_router(
+            api_router, 
+            prefix=settings.API_V1_STR if hasattr(settings, 'API_V1_STR') else "/api/v1"
+        )
+        
+        router_loaded = True
+        
+    except ImportError as e:
+        print(f"⚠️ API 路由載入失敗: {e}")
+        print("📝 將使用基本的回退端點")
+        router_loaded = False
 
-    # 註冊路由
-    app.include_router(api_router, prefix=settings.API_V1_STR)
-
-    return app
+    return app, router_loaded
 
 
 # 創建應用程式實例
-app = create_application()
+app, router_loaded = create_application()
 
 
 @app.get("/")
 async def root():
-    """根端點 - 健康檢查"""
+    """根端點"""
     return {
-        "message": "Welcome to NASA Hackathon API! 🚀",
-        "status": "healthy",
+        "message": f"歡迎使用 {settings.PROJECT_NAME}",
         "version": settings.VERSION,
-        "docs": "/docs",
+        "status": "running",
+        "router_loaded": router_loaded,
+        "endpoints": {
+            "docs": "/docs",
+            "redoc": "/redoc",
+            "health": "/health"
+        }
     }
-
 
 @app.get("/health")
 async def health_check():
     """健康檢查端點"""
     return {
         "status": "healthy",
-        "timestamp": "2024-01-01T00:00:00Z",
+        "service": settings.PROJECT_NAME,
         "version": settings.VERSION,
+        "router_loaded": router_loaded
     }
 
-
-# 添加簡化的海洋數據查詢端點（作為備用）
-@app.get("/ocean-data-simple/{target_date}")
-async def get_ocean_data_simple_fallback(target_date: str):
-    """簡化版海洋數據查詢端點（無需認證，作為備用）"""
-    import csv
-    from datetime import datetime
+# 如果路由載入失敗，提供簡單的海洋數據查詢端點
+if not router_loaded:
+    print("📋 正在載入簡單的海洋數據端點...")
     
-    try:
-        # 解析日期
-        query_date = datetime.strptime(target_date, '%Y-%m-%d').date()
-        
-        # 查詢 CSV 數據
-        csv_file = "comprehensive_shark_ocean_features - comprehensive_shark_ocean_features.csv"
-        matching_records = []
-        
-        with open(csv_file, 'r', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
+    @app.get("/simple-ocean-data/{date}")
+    async def get_simple_ocean_data(date: str):
+        """簡單的海洋數據查詢端點（回退版本）"""
+        try:
+            # 讀取 CSV 檔案
+            csv_filename = "comprehensive_shark_ocean_features - comprehensive_shark_ocean_features.csv"
             
-            for row in reader:
-                row_date = datetime.strptime(row['Date'], '%Y-%m-%d').date()
-                if row_date == query_date:
-                    matching_records.append(row)
-        
-        if not matching_records:
-            return {
-                "date": str(query_date),
-                "sst_value": None,
-                "chl_value": None,
-                "ssha_value": None,
-                "data_count": 0,
-                "message": "該日期無數據"
-            }
-        
-        # 計算平均值
-        def safe_float(value):
-            try:
-                return float(value) if value else None
-            except:
-                return None
-        
-        sst_values = [safe_float(record['SST_Value']) for record in matching_records]
-        chl_values = [safe_float(record['CHL_Value']) for record in matching_records]
-        ssha_values = [safe_float(record['SSHA_Value']) for record in matching_records]
-        
-        # 過濾 None 值
-        sst_values = [v for v in sst_values if v is not None]
-        chl_values = [v for v in chl_values if v is not None]
-        ssha_values = [v for v in ssha_values if v is not None]
-        
-        avg_sst = sum(sst_values) / len(sst_values) if sst_values else None
-        avg_chl = sum(chl_values) / len(chl_values) if chl_values else None
-        avg_ssha = sum(ssha_values) / len(ssha_values) if ssha_values else None
-        
-        return {
-            "date": str(query_date),
-            "sst_value": round(avg_sst, 6) if avg_sst is not None else None,
-            "chl_value": round(avg_chl, 6) if avg_chl is not None else None,
-            "ssha_value": round(avg_ssha, 6) if avg_ssha is not None else None,
-            "data_count": len(matching_records),
-            "message": "查詢成功"
-        }
-        
-    except ValueError:
-        return {"error": "日期格式錯誤，請使用 YYYY-MM-DD 格式"}
-    except FileNotFoundError:
-        return {"error": "CSV 檔案不存在"}
-    except Exception as e:
-        return {"error": f"查詢失敗: {str(e)}"}
-
+            with open(csv_filename, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row['Date'] == date:
+                        return {
+                            "status": "success",
+                            "date": date,
+                            "data": {
+                                "sst_value": float(row.get('SST_Value', 0)),
+                                "chl_value": float(row.get('CHL_Value', 0)),
+                                "ssha_value": float(row.get('SSHA_Value', 0)),
+                                "longitude": float(row.get('Longitude', 0)),
+                                "latitude": float(row.get('Latitude', 0))
+                            }
+                        }
+            
+            raise HTTPException(status_code=404, detail=f"找不到日期 {date} 的數據")
+            
+        except FileNotFoundError:
+            raise HTTPException(status_code=500, detail="海洋數據檔案不存在")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"讀取數據失敗: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
