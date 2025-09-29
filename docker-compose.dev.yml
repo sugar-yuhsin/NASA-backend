@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # 開發環境的 FastAPI 應用程式
+  app:
+    build: .
+    container_name: nasa-hackathon-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=true
+      - DATABASE_URL=postgresql://nasa_user:nasa_password@db:5432/nasa_hackathon
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - .:/app
+      - ./uploads:/app/uploads
+    networks:
+      - nasa-network
+    restart: unless-stopped
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # PostgreSQL 資料庫
+  db:
+    image: postgres:15-alpine
+    container_name: nasa-hackathon-dev-db
+    environment:
+      - POSTGRES_DB=nasa_hackathon
+      - POSTGRES_USER=nasa_user
+      - POSTGRES_PASSWORD=nasa_password
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - nasa-network
+    restart: unless-stopped
+
+  # Redis 快取
+  redis:
+    image: redis:7-alpine
+    container_name: nasa-hackathon-dev-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - nasa-network
+    restart: unless-stopped
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+
+networks:
+  nasa-network:
+    driver: bridge

@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # FastAPI 應用程式
+  app:
+    build: .
+    container_name: nasa-hackathon-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=false
+      - DATABASE_URL=postgresql://nasa_user:nasa_password@db:5432/nasa_hackathon
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./uploads:/app/uploads
+    networks:
+      - nasa-network
+    restart: unless-stopped
+
+  # PostgreSQL 資料庫
+  db:
+    image: postgres:15-alpine
+    container_name: nasa-hackathon-db
+    environment:
+      - POSTGRES_DB=nasa_hackathon
+      - POSTGRES_USER=nasa_user
+      - POSTGRES_PASSWORD=nasa_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - nasa-network
+    restart: unless-stopped
+
+  # Redis 快取
+  redis:
+    image: redis:7-alpine
+    container_name: nasa-hackathon-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - nasa-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # Nginx 反向代理 (可選)
+  nginx:
+    image: nginx:alpine
+    container_name: nasa-hackathon-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - app
+    networks:
+      - nasa-network
+    restart: unless-stopped
+
+  # 監控 (可選)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nasa-hackathon-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - nasa-network
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+
+networks:
+  nasa-network:
+    driver: bridge
