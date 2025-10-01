@@ -44,14 +44,21 @@ def get_ocean_data_by_date(target_date: date) -> Dict:
         if not matching_records:
             return {
                 "date": str(target_date),
-                "sst_value": None,
-                "chl_value": None,
-                "ssha_value": None,
-                "longitude": None,
-                "latitude": None,
-                "has_shark": False,
-                "shark_presence_rate": 0.0,
                 "data_count": 0,
+                "records": [],
+                "summary": {
+                    "shark_count": 0,
+                    "no_shark_count": 0,
+                    "total_records": 0,
+                    "shark_presence_rate": 0.0,
+                    "averages": {
+                        "sst_value": None,
+                        "chl_value": None,
+                        "ssha_value": None,
+                        "longitude": None,
+                        "latitude": None
+                    }
+                },
                 "message": "該日期無數據"
             }
         
@@ -76,65 +83,116 @@ def get_ocean_data_by_date(target_date: date) -> Dict:
         avg_longitude = sum(longitude_values) / len(longitude_values) if longitude_values else None
         avg_latitude = sum(latitude_values) / len(latitude_values) if latitude_values else None
         
-        # 計算鯊魚出現率
-        shark_presence_rate = sum(has_shark_values) / len(has_shark_values) if has_shark_values else 0
-        has_shark = shark_presence_rate > 0
+        # 處理所有記錄，返回完整數據
+        processed_records = []
+        for record in matching_records:
+            processed_record = {
+                "longitude": safe_float(record['Longitude']),
+                "latitude": safe_float(record['Latitude']),
+                "sst_value": safe_float(record['SST_Value']),
+                "chl_value": safe_float(record['CHL_Concentration']),
+                "ssha_value": safe_float(record['SSHA_Value']),
+                "has_shark": bool(int(record['has_shark'])),
+                "individual_id": record.get('Individual_ID', ''),
+                "sst_gradient": safe_float(record.get('SST_Gradient', 0)),
+                "chl_gradient": safe_float(record.get('CHL_Gradient', 0)),
+                "ssha_gradient": safe_float(record.get('SSHA_Gradient', 0)),
+                "thermal_front_strength": safe_float(record.get('Thermal_Front_Strength', 0)),
+                "productivity_index": safe_float(record.get('Productivity_Index', 0)),
+                "is_in_eddy": record.get('is_in_eddy', 'False').lower() == 'true',
+                "eddy_type": record.get('eddy_type', 'none'),
+                "daily_movement_km": safe_float(record.get('Daily_Movement_km', 0))
+            }
+            processed_records.append(processed_record)
+        
+        # 計算摘要統計
+        shark_records = [r for r in processed_records if r['has_shark']]
+        no_shark_records = [r for r in processed_records if not r['has_shark']]
+        shark_presence_rate = len(shark_records) / len(processed_records)
         
         return {
             "date": str(target_date),
-            "sst_value": round(avg_sst, 6) if avg_sst is not None else None,
-            "chl_value": round(avg_chl, 6) if avg_chl is not None else None,
-            "ssha_value": round(avg_ssha, 6) if avg_ssha is not None else None,
-            "longitude": round(avg_longitude, 6) if avg_longitude is not None else None,
-            "latitude": round(avg_latitude, 6) if avg_latitude is not None else None,
-            "has_shark": has_shark,
-            "shark_presence_rate": round(shark_presence_rate, 3),
-            "data_count": len(matching_records),
+            "data_count": len(processed_records),
+            "records": processed_records,  # 所有記錄
+            "summary": {
+                "shark_count": len(shark_records),
+                "no_shark_count": len(no_shark_records),
+                "total_records": len(processed_records),
+                "shark_presence_rate": round(shark_presence_rate, 6),
+                "averages": {
+                    "sst_value": round(avg_sst, 6) if avg_sst is not None else None,
+                    "chl_value": round(avg_chl, 6) if avg_chl is not None else None,
+                    "ssha_value": round(avg_ssha, 6) if avg_ssha is not None else None,
+                    "longitude": round(avg_longitude, 6) if avg_longitude is not None else None,
+                    "latitude": round(avg_latitude, 6) if avg_latitude is not None else None
+                }
+            },
             "message": "查詢成功"
         }
         
     except FileNotFoundError:
         return {
             "date": str(target_date),
-            "sst_value": None,
-            "chl_value": None,
-            "ssha_value": None,
-            "longitude": None,
-            "latitude": None,
-            "has_shark": False,
-            "shark_presence_rate": 0.0,
             "data_count": 0,
+            "records": [],
+            "summary": {
+                "shark_count": 0,
+                "no_shark_count": 0,
+                "total_records": 0,
+                "shark_presence_rate": 0.0,
+                "averages": {
+                    "sst_value": None,
+                    "chl_value": None,
+                    "ssha_value": None,
+                    "longitude": None,
+                    "latitude": None
+                }
+            },
             "error": "CSV 檔案不存在"
         }
     except Exception as e:
         return {
             "date": str(target_date),
-            "sst_value": None,
-            "chl_value": None,
-            "ssha_value": None,
-            "longitude": None,
-            "latitude": None,
-            "has_shark": False,
-            "shark_presence_rate": 0.0,
             "data_count": 0,
+            "records": [],
+            "summary": {
+                "shark_count": 0,
+                "no_shark_count": 0,
+                "total_records": 0,
+                "shark_presence_rate": 0.0,
+                "averages": {
+                    "sst_value": None,
+                    "chl_value": None,
+                    "ssha_value": None,
+                    "longitude": None,
+                    "latitude": None
+                }
+            },
             "error": f"讀取數據失敗: {str(e)}"
         }
 
 @router.get("/date/{target_date}")
 async def get_ocean_data_by_date_simple(target_date: str):
     """
-    根據日期獲取海洋數據 (簡化版，無需認證)
+    根據日期獲取該日期的所有海洋數據記錄 (簡化版，無需認證)
     
     - **target_date**: 日期 (格式: YYYY-MM-DD, 例如 2014-07-10)
     
-    返回該日期的:
-    - sst_value: 海表溫度值
-    - chl_value: 葉綠素值  
-    - ssha_value: 海面高度異常值
-    - longitude: 經度
-    - latitude: 緯度
-    - has_shark: 是否有鯊魚 (True/False)
-    - shark_presence_rate: 鯊魚出現率 (0.0-1.0)
+    返回該日期的所有記錄，包含:
+    - records: 所有該日期的記錄列表，每筆記錄包含：
+        - sst_value: 海表溫度值
+        - chl_value: 葉綠素濃度值  
+        - ssha_value: 海面高度異常值
+        - longitude: 經度
+        - latitude: 緯度
+        - has_shark: 是否有鯊魚 (boolean)
+        - individual_id: 個體ID
+        - 其他環境參數...
+    - summary: 摘要統計
+        - shark_count: 有鯊魚的記錄數
+        - no_shark_count: 無鯊魚的記錄數
+        - shark_presence_rate: 鯊魚出現率
+        - averages: 各參數平均值
     """
     try:
         # 解析日期
