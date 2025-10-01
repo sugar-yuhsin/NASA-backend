@@ -1,6 +1,18 @@
 """
-簡化的 API 路由模組
-只包含海洋數據和 ML 預測功能
+簡化的 API 路由模# 嘗試載入改進的機器學習預測路由
+try:
+  # 條件性載入 ML 預測路由
+if ml_prediction_available:
+    api_router.include_router(
+        ml_prediction_enhanced.router,
+        prefix="/ml",
+        tags=["機器學習預測"]
+    )app.routers import ml_prediction_enhanced
+    ml_prediction_available = True
+    print("✅ 載入改進的 ML 預測路由")
+except ImportError:
+    ml_prediction_available = False
+    print("⚠️ ML 預測路由載入失敗，將跳過")數據和 ML 預測功能
 """
 
 from fastapi import APIRouter
@@ -15,7 +27,7 @@ except ImportError:
 
 # 嘗試載入機器學習預測路由
 try:
-    from app.routers import ml_prediction_simple
+    from app.routers import ml_prediction_advanced
     ml_prediction_available = True
 except ImportError:
     ml_prediction_available = False
@@ -35,7 +47,7 @@ if ocean_data_available:
 # 條件性載入 ML 預測路由
 if ml_prediction_available:
     api_router.include_router(
-        ml_prediction_simple.router,
+        ml_prediction_advanced.router,
         prefix="/ml",
         tags=["機器學習預測"]
     )
